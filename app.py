@@ -1,37 +1,76 @@
 import streamlit as st
-import openai
+import datetime
+import requests
 import os
+from dotenv import load_dotenv
 
-def generate_itinerary(destination, budget, duration, interests):
-    """Generate a travel itinerary using OpenAI API."""
-    prompt = f"""
-    You are a travel assistant. Generate a {duration}-day itinerary for {destination}.
-    The user has a {budget} budget and is interested in {interests}.
-    Provide a structured day-by-day plan with activities, accommodations, and food suggestions.
-    """
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "system", "content": "You are a travel planner."},
-                  {"role": "user", "content": prompt}]
-    )
-    return response['choices'][0]['message']['content']
+# --- Load API Key from .env ---
+load_dotenv()  # Load environment variables from .env
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")  # Get API key securely
+TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
 
-# Set OpenAI API Key
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Use environment variable for security
+# --- Helper Function to Get Response from Together AI ---
+def get_together_response(prompt):
+    """Fetches a response from Together AI based on the user prompt."""
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "mistralai/Mistral-7B-Instruct-v0.1",  # Choose appropriate model
+        "messages": [
+            {"role": "system", "content": "You are a travel assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000,
+    }
+    
+    response = requests.post(TOGETHER_API_URL, headers=headers, json=payload)
+    
+    if response.status_code == 200:
+        result = response.json()
+        return result["choices"][0]["message"]["content"].strip()
+    else:
+        return f"Error: {response.status_code} - {response.text}"
 
-# Streamlit UI
-st.title("AI-Powered Travel Planner")
+# --- Streamlit UI ---
+st.title("🌍 AI-Powered Trip Planner (Together AI Edition)")
+st.write("Plan your perfect trip with personalized recommendations powered by Together AI!")
 
-# User Inputs
-destination = st.text_input("Enter your destination:")
-budget = st.selectbox("Select your budget:", ["Budget", "Mid-range", "Luxury"])
-duration = st.slider("Trip Duration (in days):", 1, 14, 5)
-interests = st.text_area("What are your interests? (e.g., history, food, nature)")
+# Collecting User Inputs with Forms
+with st.form("trip_form"):
+    destination = st.text_input("📍 Where are you traveling to?")
+    start_date = st.date_input("📅 Start Date", datetime.date.today())
+    end_date = st.date_input("📅 End Date", datetime.date.today())
+    budget = st.selectbox("💸 What is your budget?", ["Budget", "Moderate", "Luxury"])
+    interests = st.text_input("🎯 What activities or interests do you have?")
+    dietary = st.text_input("🍽 Any dietary preferences?")
+    mobility = st.selectbox("🦽 Do you have any mobility concerns?", ["None", "Limited", "Wheelchair Accessible"])
+    accommodation = st.selectbox("🏨 Accommodation preference", ["Budget", "Moderate", "Luxury", "Central Location"])
+    submit_button = st.form_submit_button("✨ Get My Itinerary")
 
-if st.button("Generate Itinerary"):
-    if destination and interests:
-        itinerary = generate_itinerary(destination, budget, duration, interests)
-        st.subheader("Your Personalized Itinerary:")
+# --- Validate and Process User Input ---
+if submit_button:
+    if destination and start_date and end_date:
+        days = (end_date - start_date).days + 1
+
+        # --- Build User Context Prompt ---
+        user_input_prompt = f"Generate a {days}-day itinerary for a trip to {destination} with a {budget.lower()} budget. "
+        user_input_prompt += f"Interests include {interests}. "
+        
+        if dietary:
+            user_input_prompt += f"Consider dietary preferences: {dietary}. "
+        if mobility != "None":
+            user_input_prompt += f"Ensure activities are {mobility.lower()} friendly. "
+        user_input_prompt += f"Stay in a {accommodation.lower()} accommodation."
+
+        # --- Get Response from Together AI ---
+        itinerary = get_together_response(user_input_prompt)
+        
+        # --- Display Itinerary ---
+        st.subheader("📅 Your Personalized Itinerary")
         st.write(itinerary)
     else:
-        st.warning("Please enter all required details.")
+        st.warning("⚠ Please fill in all required fields!")
